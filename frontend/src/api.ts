@@ -117,15 +117,17 @@ function getFallbackExperimentsList(): ExperimentListItem[] {
   return [
     {
       id: 'demo-exp-002-candidate',
-      name: 'GPT-4o-mini Prompt v2 (Candidate)',
+      name: '[DEMO DATA] GPT-4o-mini Prompt v2 (Candidate)',
       status: 'completed',
+      is_demo: true,
       started_at: new Date(Date.now() - 3600000).toISOString(),
       completed_at: new Date(Date.now() - 3590000).toISOString(),
     },
     {
       id: 'demo-exp-001-baseline',
-      name: 'GPT-3.5 Legacy Baseline',
+      name: '[DEMO DATA] GPT-3.5 Legacy Baseline',
       status: 'completed',
+      is_demo: true,
       started_at: new Date(Date.now() - 7200000).toISOString(),
       completed_at: new Date(Date.now() - 7180000).toISOString(),
     },
@@ -136,13 +138,14 @@ function getFallbackExperiment(id: string): Experiment {
   const isCand = id.includes('candidate');
   return {
     id,
+    is_demo: true,
     config: {
       experiment_id: id,
-      name: isCand ? 'GPT-4o-mini Prompt v2 (Candidate)' : 'GPT-3.5 Legacy Baseline',
+      name: isCand ? '[DEMO DATA] GPT-4o-mini Prompt v2 (Candidate)' : '[DEMO DATA] GPT-3.5 Legacy Baseline',
       dataset_path: 'examples/sample_dataset.jsonl',
       provider: {
-        name: isCand ? 'openai_compatible' : 'mock',
-        model: isCand ? 'gpt-4o-mini' : 'mock-default',
+        name: isCand ? 'mock' : 'mock',
+        model: isCand ? 'mock-gpt-4o-mini-simulated' : 'mock-gpt-3.5-simulated',
       },
       prompt: {
         system_prompt: 'You are a concise, factual technical assistant. Answer directly.',
@@ -174,8 +177,9 @@ function getFallbackExperiment(id: string): Experiment {
         case_id: 'support-001',
         input: 'How can I reset my account password?',
         reference: "To reset your password, visit the sign-in page and click 'Forgot password'. Follow the email instructions to create a new password.",
-        output: "Visit the sign-in page, click 'Forgot password', and follow the email instructions to choose a new password.",
+        output: "[SIMULATED] Visit the sign-in page, click 'Forgot password', and follow the email instructions to choose a new password.",
         latency_ms: isCand ? 130.0 : 190.0,
+        is_simulated: true,
         metrics: [
           { metric_name: 'exact_match', score: 0.0, passed: false },
           { metric_name: 'token_overlap_f1', score: 0.85, passed: true },
@@ -186,8 +190,9 @@ function getFallbackExperiment(id: string): Experiment {
         case_id: 'qa-002',
         input: 'What is the capital of France?',
         reference: 'Paris',
-        output: 'Paris',
+        output: '[SIMULATED] Paris',
         latency_ms: isCand ? 85.0 : 120.0,
+        is_simulated: true,
         metrics: [
           { metric_name: 'exact_match', score: 1.0, passed: true },
           { metric_name: 'token_overlap_f1', score: 1.0, passed: true },

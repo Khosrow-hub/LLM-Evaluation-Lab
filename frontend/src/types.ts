@@ -110,6 +110,7 @@ export interface Experiment {
   results?: CaseResult[];
   summary?: ExperimentSummary;
   error?: string | null;
+  is_demo?: boolean;
 }
 
 export interface ExperimentListItem {
@@ -119,6 +120,7 @@ export interface ExperimentListItem {
   started_at?: string | null;
   completed_at?: string | null;
   error?: string | null;
+  is_demo?: boolean;
 }
 
 export interface DatasetValidationResult {
