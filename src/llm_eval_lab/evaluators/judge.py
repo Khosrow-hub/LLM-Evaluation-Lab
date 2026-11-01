@@ -15,6 +15,7 @@ Limitations and caveats
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -83,22 +84,79 @@ class JudgeEvaluator(BaseEvaluator):
         )
 
     def _parse_score(self, text: str) -> tuple[float | None, str]:
-        """Parse judge response, return (score, error_message)."""
-        # Try JSON first
+        """Parse judge response, returning (score, error_message).
+
+        Rules:
+        1. Attempt direct JSON parsing. If parsed data is a dict and has a numeric
+           'score' field, validate its range [score_min, score_max].
+        2. If text contains markdown code fences (```json ... ```) or embedded JSON
+           object, extract the JSON block and attempt to parse.
+        3. As a targeted fallback for plain-text formatting, search for explicit score
+           declarations like 'score: X' or 'rating: X'.
+        4. Out-of-range values are rejected with an explicit error, NEVER silently clamped.
+        5. Unrelated numbers in text (e.g. 'Case 1 evaluated 3 points') must NEVER be
+           falsely extracted as a score.
+        """
+        cleaned_text = text.strip()
+        data = None
+
+        # 1. Direct JSON parse
         try:
-            data = json.loads(text)
-            score = data.get("score")
-            if score is not None:
-                return float(score), ""
+            data = json.loads(cleaned_text)
         except (json.JSONDecodeError, ValueError):
-            pass
+            # 2. Extract JSON code fence if present
+            fence_match = re.search(
+                r"```(?:json)?\s*(\{.*?\})\s*```", cleaned_text, re.DOTALL | re.IGNORECASE
+            )
+            if fence_match:
+                with contextlib.suppress(json.JSONDecodeError, ValueError):
+                    data = json.loads(fence_match.group(1))
 
-        # Fall back to regex search for a number
-        match = re.search(r"\b(\d+(?:\.\d+)?)\b", text)
-        if match:
-            return float(match.group(1)), "Score extracted by regex fallback."
+            if data is None:
+                # Try finding an outermost JSON object containing "score"
+                brace_match = re.search(r"\{[^{}]*\"score\"[^{}]*\}", cleaned_text, re.DOTALL)
+                if brace_match:
+                    with contextlib.suppress(json.JSONDecodeError, ValueError):
+                        data = json.loads(brace_match.group(0))
 
-        return None, "Could not parse a numeric score from the judge response."
+        # Handle parsed JSON
+        if isinstance(data, dict):
+            if "score" not in data:
+                return None, "JSON judge response is missing required 'score' key."
+            raw_val = data["score"]
+            try:
+                score = float(raw_val)
+            except (ValueError, TypeError):
+                return None, f"Judge score '{raw_val}' is not a valid number."
+
+            if score < self._score_min or score > self._score_max:
+                return None, (
+                    f"Judge score {score} is outside allowed range [{self._score_min}, {self._score_max}]."
+                )
+            return score, ""
+
+        if data is not None and not isinstance(data, dict):
+            return None, "Judge response is valid JSON but not a JSON object."
+
+        # 3. Targeted regex fallback looking explicitly for score/rating label
+        label_match = re.search(
+            r"(?:^|[^\w])(?:score|rating)\s*[:=-]\s*(-?\d+(?:\.\d+)?)(?:[^\w]|$)",
+            cleaned_text,
+            re.IGNORECASE,
+        )
+        if label_match:
+            try:
+                score = float(label_match.group(1))
+            except ValueError:
+                return None, "Could not convert extracted score to float."
+
+            if score < self._score_min or score > self._score_max:
+                return None, (
+                    f"Judge score {score} is outside allowed range [{self._score_min}, {self._score_max}]."
+                )
+            return score, "Score extracted via explicit label fallback."
+
+        return None, "Could not safely parse a score from the judge response."
 
     def evaluate(self, case: TestCase, response: ModelResponse) -> MetricResult:
         if response.error:
@@ -134,9 +192,7 @@ class JudgeEvaluator(BaseEvaluator):
         raw_score, parse_error = self._parse_score(judge_response.text)
 
         if raw_score is not None:
-            # Clamp to configured range
-            raw_score = max(self._score_min, min(self._score_max, raw_score))
-            # Normalize to [0, 1]
+            # Normalize to [0, 1] without clamping (range is already verified)
             normalized = (raw_score - self._score_min) / max(
                 self._score_max - self._score_min, 1e-9
             )

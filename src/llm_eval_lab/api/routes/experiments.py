@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
@@ -68,7 +69,11 @@ def _validate_dataset_path(raw_path: str) -> Path:
 
 @router.post("/")
 async def create_experiment(req: RunExperimentRequest, background_tasks: BackgroundTasks):
-    """Create and run an experiment (runs synchronously for now)."""
+    """Create and run an experiment.
+
+    Execution is dispatched to an async worker thread via asyncio.to_thread to
+    avoid blocking the FastAPI event loop during model provider calls or retries.
+    """
     dataset_path = _validate_dataset_path(req.dataset_path)
 
     config = ExperimentConfig(
@@ -83,9 +88,9 @@ async def create_experiment(req: RunExperimentRequest, background_tasks: Backgro
         ),
     )
 
-    experiment = run_experiment(config)
+    experiment = await asyncio.to_thread(run_experiment, config)
     storage = get_storage()
-    storage.save_experiment(experiment)
+    await asyncio.to_thread(storage.save_experiment, experiment)
 
     return {
         "experiment_id": experiment.experiment_id,

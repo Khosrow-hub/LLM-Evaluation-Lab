@@ -48,14 +48,33 @@ Rather than assuming $d_i$ follows a Gaussian distribution (which is almost alwa
 
 ## 3. Practical Significance vs. Statistical Significance
 
-A model change might produce a statistically significant lift that is practically meaningless (e.g. $+0.001$ F1 on $n = 100,000$ cases).
+A model change might produce a statistically significant lift that is practically meaningless (e.g. $+0.001$ F1 on $n = 100,000$ cases). Conversely, on smaller datasets, a large observed mean difference might not be statistically reliable.
 
-**LLM Evaluation Lab** introduces a **Practical Significance Threshold** $\tau$ (default $\tau = 0.02$ or 2%):
-- An improvement is classified as `IMPROVED` only if:
-  $$\text{CI}_{\text{lower}} > 0 \quad \text{AND} \quad \bar{d} \ge \tau$$
-- A regression is classified as `REGRESSED` if:
-  $$\text{CI}_{\text{upper}} < 0 \quad \text{AND} \quad |\bar{d}| \ge \tau$$
-- If the confidence interval spans across zero ($0 \in [\text{CI}_{\text{lower}}, \text{CI}_{\text{upper}}]$) or the magnitude does not clear $\tau$, the result is strictly classified as `INCONCLUSIVE`.
+### 3.1 Units of Measurement & Terminology
+It is critical to distinguish between different measurements:
+1. **Absolute Change ($\Delta$):**
+   $$\Delta = \bar{x}_{\text{cand}} - \bar{x}_{\text{base}}$$
+   Measured in the metric's natural units. For bounded $[0, 1]$ metrics like Exact Match or F1, an absolute change of $+0.02$ represents **$+2$ percentage points** (not a 2% relative change).
+2. **Relative Change ($\Delta\%$):**
+   $$\Delta\% = \frac{\Delta}{|\bar{x}_{\text{base}}|} \times 100\%$$
+   Defined only when the baseline mean is non-zero. If baseline mean is $0.0$, relative change is mathematically undefined and reported as `None`.
+3. **Statistical Significance:**
+   Achieved when the empirical bootstrap confidence interval does not contain zero ($0 \notin [\text{CI}_{\text{lower}}, \text{CI}_{\text{upper}}]$).
+4. **Practical Significance Threshold ($\tau$):**
+   A minimum effect size specified in **absolute metric units**. The default in `RegressionConfig` is **$\tau = 0.0$** (pure statistical significance). Users may configure $\tau > 0$ (e.g., $\tau = 0.02$ for a $+0.02$ absolute score point threshold).
+
+### 3.2 Decision Rules
+The decision engine applies conservative rules evaluated against the **confidence interval bounds** rather than point estimates:
+
+For higher-is-better metrics:
+- **`IMPROVED`**: The lower bound of the CI strictly exceeds the threshold:
+  $$\text{CI}_{\text{lower}} > \tau$$
+  *(With default $\tau = 0.0$, this simplifies to $\text{CI}_{\text{lower}} > 0$.)*
+- **`REGRESSED`**: The upper bound of the CI strictly falls below the negative threshold:
+  $$\text{CI}_{\text{upper}} < -\tau$$
+  *(With default $\tau = 0.0$, this simplifies to $\text{CI}_{\text{upper}} < 0$.)*
+- **`INCONCLUSIVE`**: The confidence interval crosses zero ($0 \in [\text{CI}_{\text{lower}}, \text{CI}_{\text{upper}}]$) or fails to clear the practical significance threshold $\tau$.
+- **`INSUFFICIENT_DATA`**: The number of aligned, valid paired samples $n < \text{min\_samples}$ (default 5).
 
 ---
 

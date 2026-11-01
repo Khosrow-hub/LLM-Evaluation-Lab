@@ -72,6 +72,58 @@ class TestClassifyDecision:
         decision, _ = self._call(0.0, 0.0)
         assert decision == RegressionDecision.INCONCLUSIVE
 
+    def test_default_threshold_strictly_requires_non_zero_bound(self):
+        # Default ps=0.0: CI lower bound must strictly exceed 0
+        dec_improved, _ = self._call(0.0001, 0.05, ps=0.0)
+        assert dec_improved == RegressionDecision.IMPROVED
+
+        # Exact zero at lower bound is NOT improved
+        dec_zero_low, _ = self._call(0.0, 0.05, ps=0.0)
+        assert dec_zero_low == RegressionDecision.INCONCLUSIVE
+
+        # Default ps=0.0: CI upper bound must strictly be below 0
+        dec_regressed, _ = self._call(-0.05, -0.0001, ps=0.0)
+        assert dec_regressed == RegressionDecision.REGRESSED
+
+        # Exact zero at upper bound is NOT regressed
+        dec_zero_high, _ = self._call(-0.05, 0.0, ps=0.0)
+        assert dec_zero_high == RegressionDecision.INCONCLUSIVE
+
+    def test_practical_significance_exact_boundary_conditions(self):
+        # Boundary: ci_lower == threshold -> INCONCLUSIVE because it requires strictly >
+        dec_at_thresh, _ = self._call(0.05, 0.10, ps=0.05)
+        assert dec_at_thresh == RegressionDecision.INCONCLUSIVE
+
+        # Above boundary -> IMPROVED
+        dec_above, _ = self._call(0.0501, 0.10, ps=0.05)
+        assert dec_above == RegressionDecision.IMPROVED
+
+        # Negative boundary: ci_upper == -threshold -> INCONCLUSIVE (requires strictly <)
+        dec_neg_thresh, _ = self._call(-0.10, -0.05, ps=0.05)
+        assert dec_neg_thresh == RegressionDecision.INCONCLUSIVE
+
+        # Below negative boundary -> REGRESSED
+        dec_below, _ = self._call(-0.10, -0.0501, ps=0.05)
+        assert dec_below == RegressionDecision.REGRESSED
+
+    def test_lower_is_better_with_nonzero_practical_threshold(self):
+        # Lower-is-better: candidate latency drops by 50-100ms. Threshold = 20ms.
+        # Difference = cand - base = [-100, -50].
+        # Sign-flipped to [50, 100]. Lower bound 50 > 20 -> IMPROVED.
+        dec_imp, _ = self._call(-100.0, -50.0, ps=20.0, direction=MetricDirection.LOWER_IS_BETTER)
+        assert dec_imp == RegressionDecision.IMPROVED
+
+        # Latency drops by only 5-15ms, which is below practical threshold of 20ms
+        dec_small_imp, _ = self._call(
+            -15.0, -5.0, ps=20.0, direction=MetricDirection.LOWER_IS_BETTER
+        )
+        assert dec_small_imp == RegressionDecision.INCONCLUSIVE
+
+        # Latency increases by 50-100ms. Difference = [50, 100].
+        # Sign-flipped to [-100, -50]. Upper bound -50 < -20 -> REGRESSED.
+        dec_reg, _ = self._call(50.0, 100.0, ps=20.0, direction=MetricDirection.LOWER_IS_BETTER)
+        assert dec_reg == RegressionDecision.REGRESSED
+
 
 # ── compare_experiments ───────────────────────────────────────────────────────
 
@@ -210,3 +262,57 @@ class TestCompareExperiments:
         )
         mc = next(m for m in report.metric_comparisons if m.metric_name == "exact_match")
         assert mc.decision == RegressionDecision.INCONCLUSIVE
+
+    def test_latency_regression_independent_of_overall_quality_decision(self):
+        # Accuracy improves, latency regresses. Overall decision should be IMPROVED.
+        base_cases = {
+            f"c{i}": [
+                MetricResult(
+                    metric_name="exact_match", score=0.3, direction=MetricDirection.HIGHER_IS_BETTER
+                ),
+                MetricResult(
+                    metric_name="latency_ms", score=100.0, direction=MetricDirection.LOWER_IS_BETTER
+                ),
+            ]
+            for i in range(25)
+        }
+        cand_cases = {
+            f"c{i}": [
+                MetricResult(
+                    metric_name="exact_match", score=0.8, direction=MetricDirection.HIGHER_IS_BETTER
+                ),
+                MetricResult(
+                    metric_name="latency_ms", score=400.0, direction=MetricDirection.LOWER_IS_BETTER
+                ),
+            ]
+            for i in range(25)
+        }
+        base_exp = Experiment(
+            config=ExperimentConfig(
+                provider=ProviderConfig(name="mock"), dataset_path="test.jsonl"
+            ),
+            status=ExperimentStatus.COMPLETED,
+            results=[
+                CaseResult(case_id=cid, input=f"input {cid}", metrics=m)
+                for cid, m in base_cases.items()
+            ],
+        )
+        cand_exp = Experiment(
+            config=ExperimentConfig(
+                provider=ProviderConfig(name="mock"), dataset_path="test.jsonl"
+            ),
+            status=ExperimentStatus.COMPLETED,
+            results=[
+                CaseResult(case_id=cid, input=f"input {cid}", metrics=m)
+                for cid, m in cand_cases.items()
+            ],
+        )
+        report = compare_experiments(base_exp, cand_exp, bootstrap_n=200, bootstrap_seed=42)
+
+        em_mc = next(m for m in report.metric_comparisons if m.metric_name == "exact_match")
+        lat_mc = next(m for m in report.metric_comparisons if m.metric_name == "latency_ms")
+
+        assert em_mc.decision == RegressionDecision.IMPROVED
+        assert lat_mc.decision == RegressionDecision.REGRESSED
+        # Overall decision follows quality metrics, not informational latency
+        assert report.overall_decision == RegressionDecision.IMPROVED

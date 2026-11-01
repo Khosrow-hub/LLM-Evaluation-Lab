@@ -80,6 +80,20 @@ export const ExperimentDetailModal: React.FC<ExperimentDetailModalProps> = ({
               <span className={`badge badge-${experiment.status}`}>
                 {experiment.status}
               </span>
+              {(experiment.is_demo || experiment.id?.startsWith('demo-') || cfg.experiment_id.startsWith('demo-')) && (
+                <span
+                  className="badge"
+                  style={{
+                    background: 'rgba(234, 179, 8, 0.15)',
+                    color: '#fbbf24',
+                    border: '1px solid rgba(234, 179, 8, 0.35)',
+                    fontSize: '0.675rem',
+                    fontWeight: 600,
+                  }}
+                >
+                  DEMO DATA
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 16, marginTop: 4, fontSize: '0.775rem', color: 'var(--text-muted)' }}>
               <span>ID: <code className="mono">{cfg.experiment_id.slice(0, 8)}</code></span>
@@ -237,8 +251,24 @@ export const ExperimentDetailModal: React.FC<ExperimentDetailModalProps> = ({
 
                 {/* Model Output */}
                 <div style={{ background: '#090d16', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: 14 }}>
-                  <div style={{ fontSize: '0.725rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--primary)', marginBottom: 6 }}>
-                    Model Output
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: '0.725rem', fontWeight: 600, textTransform: 'uppercase', color: 'var(--primary)' }}>
+                      Model Output
+                    </span>
+                    {(selectedCase.is_simulated || cfg.provider?.name === 'mock') && (
+                      <span
+                        className="badge"
+                        style={{
+                          background: 'rgba(168, 85, 247, 0.15)',
+                          color: '#c084fc',
+                          border: '1px solid rgba(168, 85, 247, 0.35)',
+                          fontSize: '0.65rem',
+                          fontWeight: 600,
+                        }}
+                      >
+                        SIMULATED OUTPUT
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: '0.85rem', color: '#f8fafc', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                     {selectedCase.output || (

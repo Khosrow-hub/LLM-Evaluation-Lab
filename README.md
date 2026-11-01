@@ -113,7 +113,7 @@ npm run dev
 
 ## 📊 Statistical Regression Engine
 
-Comparing two prompts by subtracting their average accuracy ($\bar{x}_B - \bar{x}_A = +2.3\%$) is misleading on small or noisy datasets.
+Comparing two prompts by subtracting their average accuracy ($\bar{x}_B - \bar{x}_A = +0.023$ or $+2.3$ percentage points) is misleading on small or noisy datasets.
 
 **LLM Evaluation Lab** pairs each test case:
 $$d_i = \text{score}(C_i) - \text{score}(B_i)$$
@@ -121,11 +121,18 @@ and resamples differences with replacement over $B = 2,000$ iterations:
 
 $$\text{CI}_{95\%} = [\text{percentile}_{2.5\%}, \text{percentile}_{97.5\%}]$$
 
+### Statistical vs. Practical Significance & Units
+- **Absolute Change ($\Delta$):** $\Delta = \bar{x}_C - \bar{x}_B$ expressed in the metric's natural units (e.g., $+0.05$ on a $[0, 1]$ accuracy scale represents $+5$ percentage points).
+- **Relative Change ($\Delta\%$):** $\Delta\% = \frac{\Delta}{|\bar{x}_B|} \times 100\%$ (undefined when baseline mean is zero).
+- **Practical Significance Threshold ($\tau$):** An optional minimum effect magnitude in **absolute metric units** (default $\tau = 0.0$, evaluating pure statistical significance).
+
 ### Decision State Matrix:
-- `IMPROVED`: Lower bound of 95% CI $> 0$ and observed mean difference exceeds practical significance threshold $\tau$ (default 2%).
-- `REGRESSED`: Upper bound of 95% CI $< 0$ and observed mean difference exceeds $\tau$.
-- `INCONCLUSIVE`: Confidence interval spans across zero (no statistically verifiable difference).
-- `INSUFFICIENT_DATA`: Fewer than 5 paired samples available.
+- `IMPROVED`: Lower bound of 95% CI $> \tau$ (for higher-is-better metrics; candidate improvement is statistically verifiable and clears practical threshold).
+- `REGRESSED`: Upper bound of 95% CI $< -\tau$ (for higher-is-better metrics; candidate regression is statistically verifiable and exceeds practical threshold).
+- `INCONCLUSIVE`: Confidence interval spans zero or fails to clear the practical threshold $\tau$.
+- `INSUFFICIENT_DATA`: Fewer than 5 paired samples available between baseline and candidate.
+
+*Note: For lower-is-better metrics (such as `latency_ms`), signs are inverted. Quality metrics drive the overall experiment release verdict, while latency is tracked as an informational metric.*
 
 ---
 

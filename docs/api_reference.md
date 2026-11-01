@@ -180,3 +180,13 @@ Executes paired bootstrap resampling to compare candidate against baseline.
 
 - Supported formats: `markdown`, `json`.
 - Returns detailed regression reports formatted for GitHub PR comments, compliance documentation, or analytics ingestion.
+
+---
+
+## 6. Security & Deployment Model
+
+- **Local-By-Default:** The API binds to `127.0.0.1` by default and has no built-in user authentication layer. It is designed for trusted local developer workflows and secure CI runners.
+- **Non-Loopback Warning:** If `API_HOST` is configured to bind to a non-loopback interface (such as `0.0.0.0`), a prominent security warning is emitted at startup. In multi-user or production cloud deployments, place the API behind an authenticating reverse proxy (e.g., Nginx, Caddy, Cloudflare Access) with TLS encryption.
+- **Dataset Path Containment:** The `/api/experiments/` endpoint resolves and validates all requested dataset paths using canonical path containment relative to the configured `LLM_EVAL_DATA_DIR`. Attempts to traverse outside the allowed directory (`../`, absolute paths, symlink escapes) are rejected with HTTP 400.
+- **Bounded Streaming Uploads:** The `/api/datasets/validate` and `/api/datasets/preview` endpoints stream uploaded files in 64KB bounded chunks up to a 10MB hard ceiling before parsing. Files exceeding the limit are rejected immediately with HTTP 413 without loading the full file into server memory. Temporary files are guaranteed to be cleaned up in a `finally` block.
+- **Zero Secret Exposure:** Model provider API keys are read directly from local environment variables or runtime configurations and are never persisted in the database, logged, or returned in API responses.

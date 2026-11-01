@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -24,8 +26,8 @@ class CompareRequest(BaseModel):
 async def create_comparison(req: CompareRequest):
     """Compare baseline and candidate experiments."""
     storage = get_storage()
-    baseline = storage.load_experiment(req.baseline_id)
-    candidate = storage.load_experiment(req.candidate_id)
+    baseline = await asyncio.to_thread(storage.load_experiment, req.baseline_id)
+    candidate = await asyncio.to_thread(storage.load_experiment, req.candidate_id)
 
     if baseline is None:
         raise HTTPException(
@@ -36,7 +38,8 @@ async def create_comparison(req: CompareRequest):
             status_code=404, detail=f"Candidate experiment not found: {req.candidate_id}"
         )
 
-    report = compare_experiments(
+    report = await asyncio.to_thread(
+        compare_experiments,
         baseline,
         candidate,
         regression_config=RegressionConfig(),
@@ -44,7 +47,7 @@ async def create_comparison(req: CompareRequest):
         bootstrap_seed=req.bootstrap_seed,
         confidence_level=req.confidence_level,
     )
-    storage.save_comparison(report)
+    await asyncio.to_thread(storage.save_comparison, report)
 
     return report.model_dump()
 

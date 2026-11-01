@@ -26,6 +26,13 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    if settings.api_host not in ("127.0.0.1", "localhost", "::1"):
+        logger.warning(
+            "SECURITY WARNING: LLM Evaluation Lab API is binding to non-loopback host '%s'. "
+            "The API does not enforce authentication and is intended for trusted local development. "
+            "Do not expose this service to untrusted networks without an authenticating reverse proxy.",
+            settings.api_host,
+        )
     logger.info("LLM Evaluation Lab API starting.")
     yield
     logger.info("LLM Evaluation Lab API shutting down.")

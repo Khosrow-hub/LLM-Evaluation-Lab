@@ -7,6 +7,23 @@ import type {
 
 const API_BASE = '/api';
 
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
+
+function isNetworkError(err: unknown): boolean {
+  if (err instanceof ApiError) return false;
+  // Browser fetch throws TypeError on DNS/connection failure or AbortError on timeout
+  if (err instanceof TypeError) return true;
+  if (err && typeof err === 'object' && 'name' in err && (err as any).name === 'AbortError') return true;
+  return false;
+}
+
 export async function checkHealth(): Promise<{ status: string; version: string; isConnected: boolean }> {
   try {
     const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
@@ -23,23 +40,36 @@ export async function checkHealth(): Promise<{ status: string; version: string; 
 export async function listExperiments(): Promise<ExperimentListItem[]> {
   try {
     const res = await fetch(`${API_BASE}/experiments/`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      throw new ApiError(res.status, `Server error ${res.status}: ${res.statusText}`);
+    }
     const data = await res.json();
     return data.experiments || [];
   } catch (err) {
-    console.warn('API unavailable, returning local cache/demos:', err);
-    return getFallbackExperimentsList();
+    if (isNetworkError(err)) {
+      console.warn('API network connection offline, returning offline demo fallback:', err);
+      return getFallbackExperimentsList();
+    }
+    throw err;
   }
 }
 
 export async function getExperiment(id: string): Promise<Experiment> {
+  if (id.startsWith('demo-')) {
+    return getFallbackExperiment(id);
+  }
   try {
     const res = await fetch(`${API_BASE}/experiments/${id}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      throw new ApiError(res.status, `Failed to load experiment ${id} (HTTP ${res.status})`);
+    }
     return await res.json();
   } catch (err) {
-    console.warn('API unavailable, returning mock experiment detail:', err);
-    return getFallbackExperiment(id);
+    if (isNetworkError(err)) {
+      console.warn('API network connection offline, returning offline demo fallback:', err);
+      return getFallbackExperiment(id);
+    }
+    throw err;
   }
 }
 
@@ -177,7 +207,7 @@ function getFallbackExperiment(id: string): Experiment {
         case_id: 'support-001',
         input: 'How can I reset my account password?',
         reference: "To reset your password, visit the sign-in page and click 'Forgot password'. Follow the email instructions to create a new password.",
-        output: "[SIMULATED] Visit the sign-in page, click 'Forgot password', and follow the email instructions to choose a new password.",
+        output: "Visit the sign-in page, click 'Forgot password', and follow the email instructions to choose a new password.",
         latency_ms: isCand ? 130.0 : 190.0,
         is_simulated: true,
         metrics: [
@@ -190,7 +220,7 @@ function getFallbackExperiment(id: string): Experiment {
         case_id: 'qa-002',
         input: 'What is the capital of France?',
         reference: 'Paris',
-        output: '[SIMULATED] Paris',
+        output: 'Paris',
         latency_ms: isCand ? 85.0 : 120.0,
         is_simulated: true,
         metrics: [

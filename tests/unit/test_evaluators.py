@@ -14,7 +14,8 @@ from llm_eval_lab.evaluators.deterministic import (
     NormalizedExactMatchEvaluator,
     TokenOverlapF1Evaluator,
 )
-from llm_eval_lab.schemas import MetricDirection, ModelResponse, TestCase
+from llm_eval_lab.evaluators.judge import JudgeEvaluator
+from llm_eval_lab.schemas import MetricDirection, ModelResponse, ProviderConfig, TestCase
 
 
 def _case(
@@ -202,3 +203,69 @@ class TestLatencyEvaluator:
     def test_no_reference_needed(self):
         r = self.ev.evaluate(_case(reference=None), ModelResponse(text="x", latency_ms=0.0))
         assert r.score == 0.0
+
+
+# ── JudgeEvaluator Parsing ───────────────────────────────────────────────────
+
+
+class TestJudgeEvaluatorParsing:
+    ev = JudgeEvaluator(
+        judge_config=ProviderConfig(name="mock"),
+        score_min=0.0,
+        score_max=10.0,
+    )
+
+    def test_parse_valid_json(self):
+        score, err = self.ev._parse_score('{"score": 8, "reasoning": "Well formulated."}')
+        assert score == 8.0
+        assert err == ""
+
+    def test_parse_json_code_fence(self):
+        payload = '```json\n{\n  "score": 9,\n  "reasoning": "Excellent"\n}\n```'
+        score, err = self.ev._parse_score(payload)
+        assert score == 9.0
+        assert err == ""
+
+    def test_parse_extra_numbers_before_score(self):
+        # Must not falsely grab "3" or "2"
+        text = "Evaluated 3 criteria across 2 dimensions. score: 7"
+        score, _ = self.ev._parse_score(text)
+        assert score == 7.0
+
+    def test_parse_malformed_json_with_explicit_label(self):
+        text = "Rating = 8.5\nThe model answered accurately."
+        score, _ = self.ev._parse_score(text)
+        assert score == 8.5
+
+    def test_reject_non_object_json(self):
+        score, err = self.ev._parse_score("[1, 2, 3]")
+        assert score is None
+        assert "not a JSON object" in err
+
+    def test_reject_missing_score_key(self):
+        score, err = self.ev._parse_score('{"reasoning": "Missing score field"}')
+        assert score is None
+        assert "missing required 'score' key" in err
+
+    def test_reject_non_numeric_score(self):
+        score, err = self.ev._parse_score('{"score": "excellent", "reasoning": "good"}')
+        assert score is None
+        assert "not a valid number" in err
+
+    def test_reject_out_of_range_high_no_silent_clamping(self):
+        # Must not silently clamp 15 to 10
+        score, err = self.ev._parse_score('{"score": 15}')
+        assert score is None
+        assert "outside allowed range" in err
+
+    def test_reject_out_of_range_negative(self):
+        score, err = self.ev._parse_score('{"score": -2}')
+        assert score is None
+        assert "outside allowed range" in err
+
+    def test_reject_arbitrary_text_with_numbers(self):
+        # Random numbers without score label must be rejected
+        text = "There are 5 apples and 10 oranges in the basket."
+        score, err = self.ev._parse_score(text)
+        assert score is None
+        assert "Could not safely parse" in err

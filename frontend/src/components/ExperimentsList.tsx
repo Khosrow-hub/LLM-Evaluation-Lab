@@ -13,6 +13,7 @@ import { ExperimentDetailModal } from './ExperimentDetailModal';
 
 interface ExperimentsListProps {
   experiments: ExperimentListItem[];
+  error?: string | null;
   onRefresh: () => void;
   onNewRun: () => void;
   onCompareWith: (baselineId: string, candidateId: string) => void;
@@ -20,6 +21,7 @@ interface ExperimentsListProps {
 
 export const ExperimentsList: React.FC<ExperimentsListProps> = ({
   experiments,
+  error,
   onRefresh,
   onNewRun,
   onCompareWith,
@@ -65,6 +67,27 @@ export const ExperimentsList: React.FC<ExperimentsListProps> = ({
   return (
     <div style={{ padding: '0 24px 32px' }}>
       {/* Top Banner & Actions */}
+      {error && (
+        <div
+          style={{
+            padding: '12px 16px',
+            marginBottom: 16,
+            borderRadius: 'var(--radius-md)',
+            background: 'rgba(244, 63, 94, 0.1)',
+            border: '1px solid rgba(244, 63, 94, 0.3)',
+            color: '#f43f5e',
+            fontSize: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>{error}</span>
+          <button onClick={onRefresh} className="btn btn-secondary btn-sm">
+            Retry
+          </button>
+        </div>
+      )}
       <div
         style={{
           display: 'flex',
@@ -164,8 +187,23 @@ export const ExperimentsList: React.FC<ExperimentsListProps> = ({
                       />
                     </td>
                     <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 600, color: '#fff' }}>{exp.name}</span>
+                        {(exp.is_demo || exp.id.startsWith('demo-')) && (
+                          <span
+                            className="badge"
+                            style={{
+                              background: 'rgba(234, 179, 8, 0.15)',
+                              color: '#fbbf24',
+                              border: '1px solid rgba(234, 179, 8, 0.35)',
+                              fontSize: '0.675rem',
+                              fontWeight: 600,
+                            }}
+                            title="Offline demonstration data"
+                          >
+                            DEMO DATA
+                          </span>
+                        )}
                         {compareRole && (
                           <span
                             className="badge"

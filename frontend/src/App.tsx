@@ -14,13 +14,19 @@ export const App: React.FC = () => {
   const [experiments, setExperiments] = useState<ExperimentListItem[]>([]);
   const [compareBaseline, setCompareBaseline] = useState<string>('');
   const [compareCandidate, setCompareCandidate] = useState<string>('');
+  const [listError, setListError] = useState<string | null>(null);
 
   const refreshAll = async () => {
     const health = await checkHealth();
     setApiConnected(health.isConnected);
 
-    const list = await listExperiments();
-    setExperiments(list);
+    try {
+      const list = await listExperiments();
+      setExperiments(list);
+      setListError(null);
+    } catch (err: any) {
+      setListError(err.message || 'Failed to load experiments');
+    }
   };
 
   useEffect(() => {
@@ -47,6 +53,7 @@ export const App: React.FC = () => {
         {activeTab === 'experiments' && (
           <ExperimentsList
             experiments={experiments}
+            error={listError}
             onRefresh={refreshAll}
             onNewRun={() => setActiveTab('new-eval')}
             onCompareWith={handleCompareWith}

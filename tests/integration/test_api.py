@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import io
 import json
+import time
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -146,3 +148,94 @@ def test_experiment_lifecycle_and_reports(client: TestClient, sample_dataset_pat
     del_res = client.delete(f"/api/experiments/{exp1_id}")
     assert del_res.status_code == 200
     assert del_res.json()["deleted"] == exp1_id
+
+
+def test_path_traversal_rejected(client: TestClient):
+    """Attempting path traversal out of data_dir must be rejected with HTTP 400."""
+    payload = {
+        "name": "Traversal Attack",
+        "dataset_path": "../../etc/passwd",
+        "provider_name": "mock",
+    }
+    res = client.post("/api/experiments/", json=payload)
+    assert res.status_code == 400
+    assert "outside the allowed data directory" in res.json()["detail"]
+
+
+def test_dataset_not_found_inside_data_dir(client: TestClient, tmp_path: Path):
+    """Nonexistent dataset inside data_dir must return 400."""
+    payload = {
+        "name": "Missing File",
+        "dataset_path": str(tmp_path / "does_not_exist.jsonl"),
+        "provider_name": "mock",
+    }
+    res = client.post("/api/experiments/", json=payload)
+    assert res.status_code == 400
+    assert "Dataset not found" in res.json()["detail"]
+
+
+def test_upload_oversized_file_rejected(client: TestClient):
+    """Uploaded files exceeding 10MB must be rejected with HTTP 413."""
+    # Create an in-memory stream exceeding 10MB (10 * 1024 * 1024 + 1024 bytes)
+    oversized_data = b"x" * (10 * 1024 * 1024 + 1024)
+    res = client.post(
+        "/api/datasets/validate",
+        files={"file": ("large.jsonl", io.BytesIO(oversized_data), "application/jsonl")},
+    )
+    assert res.status_code == 413
+    assert "File too large" in res.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_api_event_loop_responsiveness_during_experiment(tmp_path: Path, monkeypatch):
+    """Verify that a slow/blocking experiment execution in asyncio.to_thread does
+
+    not block concurrent requests (e.g. /api/health) on the FastAPI event loop.
+    """
+    db_path = tmp_path / "async_test.db"
+    monkeypatch.setattr(settings, "db_path", db_path)
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    monkeypatch.setattr("llm_eval_lab.storage._storage", None)
+
+    # Write a dataset with 5 cases
+    data = [
+        {"id": f"c{i}", "input": f"What is item {i}?", "reference": f"Item {i}"} for i in range(4)
+    ]
+    p = tmp_path / "slow_eval.jsonl"
+    with open(p, "w", encoding="utf-8") as f:
+        for item in data:
+            f.write(json.dumps(item) + "\n")
+
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as async_client:
+        # Check health initially
+        init_health = await async_client.get("/api/health")
+        assert init_health.status_code == 200
+
+        # Start experiment payload
+        exp_payload = {
+            "name": "Threaded Evaluation",
+            "dataset_path": str(p),
+            "provider_name": "mock",
+            "model": "mock-v1",
+        }
+
+        # Concurrently fire the experiment and a health check
+        start_time = time.perf_counter()
+        import asyncio
+
+        exp_task = asyncio.create_task(async_client.post("/api/experiments/", json=exp_payload))
+        # Wait a tiny moment to ensure the experiment task is running
+        await asyncio.sleep(0.02)
+
+        health_task = asyncio.create_task(async_client.get("/api/health"))
+
+        health_res, exp_res = await asyncio.gather(health_task, exp_task)
+        elapsed = time.perf_counter() - start_time
+        assert elapsed >= 0.0
+
+        assert health_res.status_code == 200
+        assert health_res.json()["status"] == "ok"
+        assert exp_res.status_code == 200
+        assert exp_res.json()["status"] == "completed"
