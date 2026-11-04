@@ -65,9 +65,22 @@ def iter_jsonl(path: Path) -> Iterator[tuple[int, dict]]:
                 if not line:
                     continue
                 try:
-                    yield lineno, json.loads(line)
+                    parsed = json.loads(line)
+                    if not isinstance(parsed, dict):
+                      actual_type = (
+                        "null" if parsed is None
+                        else "array" if isinstance(parsed, list)
+                        else type(parsed).__name__
+                      )
+                      yield lineno, {
+                        "__parse_error_": f"Expected a JSON object, got {actual_type}"
+                      }
+                    else:
+                      yield lineno, parsed
+
                 except json.JSONDecodeError as exc:
-                    yield lineno, {"__parse_error__": str(exc)}
+                  yield lineno, {"__parse_error__": str(exc)}
+                    
     except OSError as exc:
         raise DatasetParseError(f"Cannot open dataset file '{path}': {exc}") from exc
 
